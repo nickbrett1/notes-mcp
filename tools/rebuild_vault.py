@@ -41,6 +41,8 @@ RENDERING RULES (hardened 2026-10-11)
   survive intact. Bare 20-char tokens are deliberately NOT rewritten - that
   would corrupt incidental identifiers and code.
 * YAML is emitted with ensure_ascii=False so `->` stays `->`, not `\\u2192`.
+* A memo with neither title nor body (frontmatter only) is named
+  `untitled-<date>-<uid6>` so it never becomes a bare uid filename.
 
 STILL REQUIRED BEFORE A LIVE SWAP
 ---------------------------------
@@ -211,15 +213,16 @@ def plan_names(memos):
         d = "Archived" if m["status"] == "ARCHIVED" else ""
         base = slug(m["title"]) if m["title"] else slug(first_line_title(m["content"]))
         if not base or base == "untitled":
-            base = slug(m["uid"]) or "untitled"
+            uid6 = (m["uid"] or str(m["id"]))[:6].lower()
+            base = f"untitled-{m['created'][:10]}-{uid6}"
         taken = used.setdefault(d, set())
         new = base
         if new in taken:
-            new = f"{base}-{(m['uid'] or str(m['id']))[:6]}"
+            new = f"{base}-{uid6}"
         n = 1
         while new in taken:
             n += 1
-            new = f"{base}-{(m['uid'] or str(m['id']))[:6]}-{n}"
+            new = f"{base}-{uid6}-{n}"
         taken.add(new)
         plan[m["id"]] = (d, new)
     return plan
