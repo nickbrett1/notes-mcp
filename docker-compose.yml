@@ -24,6 +24,9 @@ services:
       NOTES_PORT: ${NOTES_PORT:-8767}
     labels:
       - "com.centurylinklabs.watchtower.enable=true"
+      # Own container: watched by the fast watchtower-nick (scope=nick, 60s
+      # poll), not the unscoped daily third-party watchtower.
+      - "com.centurylinklabs.watchtower.scope=nick"
       # Homepage entry is defined manually in Homepage's services.yaml under
       # the "MCP Servers" group (icon + description + alphabetical order).
       # Homepage prepends label-discovered services, so label-based discovery
