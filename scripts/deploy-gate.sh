@@ -17,12 +17,20 @@
 #
 # Env:
 #   NOTES_MCP_URL  default http://notes-mcp:8767/mcp
-#   MCPHUB_URL     default http://nas:3000
+#   MCPHUB_URL     default http://nas:8781
+#                  (the mcphub API is on 8781, NOT 3000 - see note below)
+#   MCPHUB_TOKEN   optional; sent as `x-auth-token` on the hub check.
+#                  The dashboard API uses `x-auth-token: <JWT>`, not
+#                  `Authorization: Bearer`. Set this if check 3 returns 401.
+#
+# Port note: an earlier revision defaulted MCPHUB_URL to http://nas:3000.
+# mcphub's API actually listens on 8781, so check 3 was silently failing
+# against the wrong port. Fixed 2026-10-11.
 #
 set -euo pipefail
 
 NOTES_MCP_URL="${NOTES_MCP_URL:-http://notes-mcp:8767/mcp}"
-MCPHUB_URL="${MCPHUB_URL:-http://nas:3000}"
+MCPHUB_URL="${MCPHUB_URL:-http://nas:8781}"
 EXPECTED_TOOLS=(notes_search notes_read notes_write notes_append notes_list)
 
 fail() {
@@ -85,8 +93,14 @@ count="$(wc -l <<<"$names" | tr -d ' ')"
 pass "tools/list exposes exactly the five notes_* tools"
 
 # --- 3. mcphub registration --------------------------------------------------
-status="$(curl -fsS --max-time 15 "$MCPHUB_URL/api/servers/notes-mcp" | jq -r '.status')" \
-  || fail "GET $MCPHUB_URL/api/servers/notes-mcp failed"
+# Optional auth header (the hub API uses `x-auth-token`, not `Bearer`).
+hub_hdr=()
+if [ -n "${MCPHUB_TOKEN:-}" ]; then
+  hub_hdr=(-H "x-auth-token: ${MCPHUB_TOKEN}")
+fi
+status="$(curl -fsS --max-time 15 ${hub_hdr[@]+"${hub_hdr[@]}"} \
+  "$MCPHUB_URL/api/servers/notes-mcp" | jq -r '.status')" \
+  || fail "GET $MCPHUB_URL/api/servers/notes-mcp failed (is mcphub on 8781? set MCPHUB_TOKEN if 401)"
 [ "$status" = "connected" ] \
   || fail "mcphub reports status '$status' for notes-mcp, expected 'connected'"
 pass "mcphub reports notes-mcp connected"
