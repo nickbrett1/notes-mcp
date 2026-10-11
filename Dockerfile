@@ -41,7 +41,10 @@ COPY --from=build /opt/venv /opt/venv
 COPY . .
 EXPOSE 8767
 
-HEALTHCHECK --interval=30s --timeout=3s --start-period=10s CMD curl -fsS http://127.0.0.1:8767/healthz || exit 1
+# /healthz walks the vault to report the note count, which can exceed 3s on slow
+# (USB SSD) storage, so the default 3s timeout made the health flag flaky. Keep
+# in sync via genproj's `healthcheck` config (timeout is a generator default).
+HEALTHCHECK --interval=30s --timeout=10s --start-period=15s CMD curl -fsS http://127.0.0.1:8767/healthz || exit 1
 # The image is the deployment artifact and declares an HTTP healthcheck, so its
 # default must SERVE HTTP - both the Buildkite smoke step (`docker run IMAGE`,
 # no command override) and the Watchtower-deployed compose container rely on it.
