@@ -27,19 +27,20 @@ SAFETY
 * Requires --apply to write anything; otherwise it is a dry run.
 * Deletes nothing anywhere.
 
-RENDERING RULES (hardened after a staging validation, 2026-10-11)
------------------------------------------------------------------
+RENDERING RULES (hardened 2026-10-11)
+-------------------------------------
 * Embedded frontmatter in the memo BODY is MERGED, not duplicated: if a memo's
-  content already begins with a `---` YAML block, its `title`/`tags` are lifted
-  into the generated frontmatter and the inner block is removed from the body.
+  content already begins with a `---` YAML block, its `title`/`tags`/`aliases`
+  are lifted into the generated frontmatter and the inner block is removed from
+  the body.
 * Comments are rendered as collapsed Obsidian callouts with a DATE label only
-  (`> [!note]- Comment (2026-08-17)`), never the body's first line, so the label
-  does not repeat the opening sentence.
-* Link rewriting covers BOTH `[[wikilink]]` syntax AND prose references of the
-  form `memos/<uid>` / bare `<uid>`, mapping each known uid to its slug.
-  (Not code-block aware - a uid quoted verbatim inside a fenced code sample will
-  also be rewritten. Acceptable for this corpus; note it if the corpus changes.)
-* YAML is emitted with ensure_ascii=False so `->` stays `->`, not `\u2192`.
+  (`> [!note]- Comment (2026-08-17)`), never the body's first line.
+* Link rewriting covers `[[wikilink]]` syntax AND the unambiguous prose form
+  `memos/<uid>`, mapping each known uid to its slug. It is FENCE-AWARE: fenced
+  code blocks (``` / ~~~) are never rewritten, so uids quoted in code samples
+  survive intact. Bare 20-char tokens are deliberately NOT rewritten - that
+  would corrupt incidental identifiers and code.
+* YAML is emitted with ensure_ascii=False so `->` stays `->`, not `\\u2192`.
 
 STILL REQUIRED BEFORE A LIVE SWAP
 ---------------------------------
@@ -69,6 +70,10 @@ _TRANS = {
     0x2026: "", 0x2020: "", 0x00a0: " ", ord("&"): " and ",
 }
 
+_WIKI_RE = re.compile(r"\[\[([^\]|#]*)((?:#[^\]|]*)?)(\|[^\]]*)?\]\]")
+_MEMOS_REF_RE = re.compile(r"\bmemos/([A-Za-z0-9]{20,})\b")
+_FENCE_RE = re.compile(r"(```.*?```|~~~.*?~~~)", re.S)
+
 
 def slug(t: str) -> str:
     t = (t or "").strip().translate(_TRANS).lower()
@@ -85,7 +90,7 @@ def slug(t: str) -> str:
 def split_embedded_fm(content: str):
     """If content starts with its own YAML frontmatter, return (meta, body).
 
-    meta is a small dict with 'title' (str) and 'tags' (list). The block is
+    meta has 'title' (str), 'tags' (list), 'aliases' (list). The block is
     REMOVED from the body so we never emit two frontmatter blocks.
     """
     if not content or not content.lstrip().startswith("---"):
@@ -94,43 +99,35 @@ def split_embedded_fm(content: str):
     end = body.find("\n---", 3)
     if end == -1:
         return {}, content
-    block = body[3:end]
-    rest = body[end + 4:]
+    block, rest = body[3:end], body[end + 4:]
     meta = {}
     lines = block.splitlines()
     i = 0
     while i < len(lines):
-        ln = lines[i]
-        m = re.match(r"^(\w+)\s*:\s*(.*)$", ln)
+        m = re.match(r"^(\w+)\s*:\s*(.*)$", lines[i])
         if m:
             key, val = m.group(1), m.group(2).strip()
+
+            def _list(v, start):
+                if v.startswith("[") and v.endswith("]"):
+                    return [x.strip().strip("\"'") for x in v[1:-1].split(",") if x.strip()], start
+                if v:
+                    return [v.strip("\"'")], start
+                items, j = [], start + 1
+                while j < len(lines) and re.match(r"^\s*-\s+", lines[j]):
+                    items.append(lines[j].split("-", 1)[1].strip().strip("\"'"))
+                    j += 1
+                return items, j - 1
+
             if key == "tags":
-                tags = []
-                if val.startswith("[") and val.endswith("]"):
-                    tags = [x.strip().strip('"\'') for x in val[1:-1].split(",") if x.strip()]
-                elif val:
-                    tags = [val.strip('"\'')]
-                else:
-                    j = i + 1
-                    while j < len(lines) and re.match(r"^\s*-\s+", lines[j]):
-                        tags.append(lines[j].split("-", 1)[1].strip().strip('"\''))
-                        j += 1
-                    i = j - 1
-                meta["tags"] = [t for t in tags if t]
+                items, i = _list(val, i)
+                meta["tags"] = [t for t in items if t]
             elif key in ("title", "aliases"):
-                if val.startswith("[") and val.endswith("]"):
-                    items = [x.strip().strip('"\'') for x in val[1:-1].split(",") if x.strip()]
-                elif val:
-                    items = [val.strip('"\'')]
-                else:
-                    items, j = [], i + 1
-                    while j < len(lines) and re.match(r"^\s*-\s+", lines[j]):
-                        items.append(lines[j].split("-", 1)[1].strip().strip('"\''))
-                        j += 1
-                    i = j - 1
-                meta.setdefault("aliases", []).extend(items) if key == "aliases" else None
+                items, i = _list(val, i)
                 if key == "title" and items:
                     meta["title"] = items[0]
+                elif key == "aliases":
+                    meta.setdefault("aliases", []).extend(items)
         i += 1
     return meta, rest
 
@@ -176,8 +173,7 @@ def load(db):
             tags = [tags]
         tags = [str(t) for t in tags if not re.fullmatch(r"[0-9/]+", str(t))]
 
-        raw = r["content"] or ""
-        inner, body = split_embedded_fm(raw)
+        inner, body = split_embedded_fm(r["content"] or "")
         title = (props.get("title") or "").strip() or inner.get("title", "").strip()
         for t in inner.get("tags", []):
             if t and t not in tags:
@@ -229,11 +225,8 @@ def plan_names(memos):
     return plan
 
 
-def rewrite_all(text, uid2name):
-    """Rewrite [[uid]] wikilinks AND prose 'memos/<uid>' / bare <uid> refs."""
-    if not text:
-        return text
-
+def _rewrite_segment(text, uid2name):
+    """Rewrite [[uid]] and prose memos/<uid> within a non-code segment."""
     def rep_wiki(m):
         tgt = m.group(1).strip()
         new = uid2name.get(tgt)
@@ -241,21 +234,22 @@ def rewrite_all(text, uid2name):
             return f"[[{new}{m.group(2) or ''}{m.group(3) or ''}]]"
         return m.group(0)
 
-    text = re.sub(r"\[\[([^\]|#]*)((?:#[^\]|]*)?)(\|[^\]]*)?\]\]", rep_wiki, text)
-
-    # prose: memos/<uid>
-    text = re.sub(
-        r"\bmemos/([A-Za-z0-9]{20,})\b",
-        lambda m: f"[[{uid2name[m.group(1)]}]]" if m.group(1) in uid2name else m.group(0),
-        text,
-    )
-    # prose: a bare uid token
-    text = re.sub(
-        r"(?<![A-Za-z0-9])([A-Za-z0-9]{20,})(?![A-Za-z0-9])",
+    text = _WIKI_RE.sub(rep_wiki, text)
+    text = _MEMOS_REF_RE.sub(
         lambda m: f"[[{uid2name[m.group(1)]}]]" if m.group(1) in uid2name else m.group(0),
         text,
     )
     return text
+
+
+def rewrite_all(text, uid2name):
+    """Fence-aware: rewrite links/refs only OUTSIDE ``` / ~~~ code blocks."""
+    if not text:
+        return text
+    parts = _FENCE_RE.split(text)
+    return "".join(
+        seg if i % 2 else _rewrite_segment(seg, uid2name) for i, seg in enumerate(parts)
+    )
 
 
 def callouts(comment_ids, memos, uid2name):
@@ -327,11 +321,6 @@ def main():
     print(f"memos: {len(memos)}  ->  root {n_normal} / Archived {n_arch}")
     print(f"relations: REFERENCES {n_refs}  COMMENTS {n_comments}")
     print(f"target: {a.out}{'  [APPLY]' if a.apply else '  (dry run)'}")
-
-    uid_named = [m for m in memos.values() if re.fullmatch(r"[a-z0-9-]*", plan[m["id"]][1]) and
-                 plan[m["id"]][1] == slug(m["uid"])]
-    if uid_named:
-        print(f"note: {len(uid_named)} note(s) have no usable title -> uid-named")
 
     seen = {}
     for m in memos.values():
