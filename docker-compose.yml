@@ -24,13 +24,10 @@ services:
       NOTES_PORT: ${NOTES_PORT:-8767}
     labels:
       - "com.centurylinklabs.watchtower.enable=true"
-      - "homepage.group=MCP Servers"
-      - "homepage.name=notes-mcp"
-      - "homepage.href=http://nas:8767/"
-      - "homepage.widget.type=customapi"
-      - "homepage.widget.url=http://localhost:8767/healthz"
-      - "homepage.widget.mappings[0].field=status"
-      - "homepage.widget.mappings[0].label=Status"
+      # Homepage entry is defined manually in Homepage's services.yaml under
+      # the "MCP Servers" group (icon + description + alphabetical order).
+      # Homepage prepends label-discovered services, so label-based discovery
+      # cannot reproduce the neighbours' alphabetical placement.
     networks:
       - ai_proxy
 networks:
