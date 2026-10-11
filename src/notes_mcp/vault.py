@@ -164,8 +164,17 @@ def iter_notes(root: Path, folder: str | None = None) -> Iterator[Note]:
 
 
 def count_notes(root: Path) -> int:
-    """Number of addressable notes in the vault (health endpoint)."""
-    return sum(1 for _ in iter_notes(root))
+    """Number of addressable notes in the vault (health endpoint).
+
+    Counts note *paths* only: it never reads or parses note bodies, so a probe
+    that runs every 30s (the container healthcheck, Homepage's site monitor)
+    does not re-read the whole vault off slow storage on every call. The set of
+    paths enumerated here is exactly what :func:`iter_notes` would yield.
+    """
+    base = _base(root)
+    if not base.is_dir():
+        return 0
+    return sum(1 for _ in _iter_note_paths(base, base))
 
 
 def read_note(root: Path, rel: str) -> str:

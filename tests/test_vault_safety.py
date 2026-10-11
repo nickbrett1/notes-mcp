@@ -66,3 +66,23 @@ def test_resolve_note_accepts_internal_path_climb_that_stays_inside(tmp_path):
     root = make_root(tmp_path)
     resolved = resolve_note(root, "sub/../note.md")
     assert resolved == (root / "note.md").resolve()
+
+
+def test_count_notes_counts_paths_without_loading_bodies(tmp_path, monkeypatch):
+    """The health endpoint's count must not read/parse every note body."""
+    from notes_mcp import vault
+
+    root = make_root(tmp_path)
+    for rel in ("a.md", "b.md", "sub/c.md"):
+        path = root / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("body", encoding="utf-8")
+    internal = root / ".obsidian"
+    internal.mkdir()
+    (internal / "ignored.md").write_text("body", encoding="utf-8")
+
+    def boom(*args, **kwargs):  # pragma: no cover - must not be called
+        raise AssertionError("count_notes must not read note bodies")
+
+    monkeypatch.setattr(vault, "_load", boom)
+    assert vault.count_notes(root) == 3
