@@ -22,7 +22,9 @@ mcp = MCPServer(
     instructions=(
         "Read and write markdown notes in the Obsidian vault. Paths are "
         "vault-relative; absolute paths and paths that escape the vault are "
-        "refused. One note per call."
+        "refused. One note per call. A note's full text is capped (default "
+        "51,200 characters, configurable via NOTES_MAX_CHARS); a write or "
+        "append that would exceed the cap is refused — split into smaller notes."
     ),
 )
 
@@ -49,7 +51,9 @@ def notes_write(
     """Create or overwrite one note.
 
     If ``path`` is omitted it is derived from ``title`` as ``<slug>.md`` at the
-    vault root. ``created`` and ``aliases`` are preserved on overwrite.
+    vault root. ``created`` and ``aliases`` are preserved on overwrite. The
+    whole note (frontmatter + body) is capped (default 51,200 chars); a larger
+    write is refused, so keep notes focused and split when needed.
     """
     rel = path if path else f"{fm.slug(title) or 'untitled'}.md"
     return vault.write_note(
@@ -59,7 +63,11 @@ def notes_write(
 
 @mcp.tool()
 def notes_append(path: str, text: str) -> dict[str, Any]:
-    """Append ``text`` to an existing note as a new paragraph."""
+    """Append ``text`` to an existing note as a new paragraph.
+
+    The resulting note (frontmatter + body) is capped (default 51,200 chars);
+    an append that would exceed the cap is refused.
+    """
     return vault.append_note(vault.vault_root(), path, text)
 
 

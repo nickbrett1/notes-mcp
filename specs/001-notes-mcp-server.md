@@ -53,6 +53,16 @@ eventual shape. Do not add it speculatively.
 **Bulk writes are forbidden by design.** One file per call — LiveSync's watcher
 can miss large batches. `notes_write` must never loop over multiple notes.
 
+**Note-size ceiling.** A note's full text (frontmatter + body) is capped at
+51,200 characters, mirroring the ceiling of the Memos system this replaces. The
+point is to stop an agent writing far more in a single note than it needs to,
+which bloats the context of every later reader. `notes_write` and `notes_append`
+enforce the cap on the **rendered** text and raise `NoteTooLargeError` (the write
+is refused, nothing is written) when it would be exceeded; the message tells the
+caller to split the content into smaller notes. The limit is configurable via the
+`NOTES_MAX_CHARS` env var; an unset or non-positive/non-integer value falls back
+to the 51,200 default so a bad value can never disable the guard.
+
 ---
 
 ## 3. Path safety — `vault.py` (the crown jewel)
@@ -182,6 +192,7 @@ login → `POST /api/servers` `{type:"streamable-http", url:"http://notes-mcp:87
 
 - [ ] `src/notes_mcp/` implements the 5 tools per §2, laid out per §1.
 - [ ] Path safety per §3, with the §8 traversal table green.
+- [ ] Note-size ceiling per §2 enforced on write/append, `tests/test_limits.py` green.
 - [ ] `/healthz` returns the §6 shape; container healthcheck passes locally.
 - [ ] `ruff check src tests` and `pytest` green; Buildkite green.
 - [ ] stdio default and streamable-http both wire up (§8 `test_transport.py`).

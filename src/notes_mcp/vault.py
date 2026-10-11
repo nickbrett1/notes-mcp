@@ -23,6 +23,12 @@ INTERNAL_DIRS = {"headless-vault-livesync-v2", ".livesync", ".trash", ".obsidian
 # must not be able to smuggle a traversal past the resolve() check.
 _ENCODED_SEPARATORS = ("%2f", "%5c")
 
+# A note's full text (frontmatter + body) is capped so an agent cannot write a
+# single note far larger than it needs to, which bloats the context of every
+# later reader. Mirrors the 51,200-char ceiling of the memos system this
+# replaces. Override with NOTES_MAX_CHARS.
+DEFAULT_MAX_NOTE_CHARS = 51_200
+
 
 class VaultError(Exception):
     """Base class for vault errors."""
@@ -34,6 +40,36 @@ class VaultPathError(VaultError, ValueError):
 
 class NoteNotFoundError(VaultError, FileNotFoundError):
     """The requested note does not exist in the vault."""
+
+
+class NoteTooLargeError(VaultError, ValueError):
+    """A write/append would exceed the configured note-size ceiling."""
+
+
+def max_note_chars() -> int:
+    """Character ceiling for a note's full text, from ``NOTES_MAX_CHARS``.
+
+    Falls back to :data:`DEFAULT_MAX_NOTE_CHARS` when unset or not a positive
+    integer, so a bad value can never disable the guard entirely.
+    """
+    raw = os.environ.get("NOTES_MAX_CHARS")
+    if raw:
+        try:
+            value = int(raw)
+        except ValueError:
+            return DEFAULT_MAX_NOTE_CHARS
+        if value > 0:
+            return value
+    return DEFAULT_MAX_NOTE_CHARS
+
+
+def _enforce_size(text: str) -> None:
+    limit = max_note_chars()
+    if len(text) > limit:
+        raise NoteTooLargeError(
+            f"note would be {len(text)} characters, over the {limit}-character "
+            "limit; split it into smaller notes"
+        )
 
 
 @dataclass
@@ -219,8 +255,10 @@ def write_note(
     if existing.get("aliases"):
         meta["aliases"] = existing["aliases"]
 
+    rendered = fm.emit(meta, body)
+    _enforce_size(rendered)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(fm.emit(meta, body), encoding="utf-8")
+    path.write_text(rendered, encoding="utf-8")
     return {
         "path": path.relative_to(_base(root)).as_posix(),
         "created_or_updated": "updated" if existed else "created",
@@ -244,7 +282,9 @@ def append_note(root: Path, rel: str, text: str) -> dict[str, Any]:
     body = body.rstrip("\n")
     addition = text.rstrip("\n")
     new_body = f"{body}\n\n{addition}" if body else addition
-    path.write_text(fm.emit(meta, new_body), encoding="utf-8")
+    rendered = fm.emit(meta, new_body)
+    _enforce_size(rendered)
+    path.write_text(rendered, encoding="utf-8")
     return {
         "path": path.relative_to(_base(root)).as_posix(),
         "updated": updated,
