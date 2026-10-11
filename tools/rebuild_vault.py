@@ -40,9 +40,12 @@ RENDERING RULES (hardened 2026-10-11)
   code blocks (``` / ~~~) are never rewritten, so uids quoted in code samples
   survive intact. Bare 20-char tokens are deliberately NOT rewritten - that
   would corrupt incidental identifiers and code.
-* YAML is emitted with ensure_ascii=False so `->` stays `->`, not `\\u2192`.
+* YAML is emitted with ensure_ascii=False so `->` stays `->`, not `\u2192`.
 * A memo with neither title nor body (frontmatter only) is named
   `untitled-<date>-<uid6>` so it never becomes a bare uid filename.
+* Slug collisions are resolved PER TARGET DIR by appending `-<uid6>` (and
+  `-<n>` if still taken), so `uid6` is computed for EVERY memo, not only
+  untitled ones.
 
 STILL REQUIRED BEFORE A LIVE SWAP
 ---------------------------------
@@ -212,8 +215,11 @@ def plan_names(memos):
     for m in sorted(memos.values(), key=lambda x: (x["status"] != "NORMAL", x["created"])):
         d = "Archived" if m["status"] == "ARCHIVED" else ""
         base = slug(m["title"]) if m["title"] else slug(first_line_title(m["content"]))
+        # uid6 is used by BOTH the untitled fallback and the collision suffix,
+        # so compute it up front (regression fix: dce94bfb left it inside the
+        # `if`, so any collision raised UnboundLocalError and aborted the run).
+        uid6 = (m["uid"] or str(m["id"]))[:6].lower()
         if not base or base == "untitled":
-            uid6 = (m["uid"] or str(m["id"]))[:6].lower()
             base = f"untitled-{m['created'][:10]}-{uid6}"
         taken = used.setdefault(d, set())
         new = base
