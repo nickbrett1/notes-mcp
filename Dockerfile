@@ -9,10 +9,17 @@
 
 FROM python:3.12-slim AS build
 WORKDIR /app
-COPY README.md pyproject.toml* requirements.txt* ./
+# Install from the REAL source, once, after it is copied. The generator's
+# original shape installed a stub package first (it touched an empty
+# src/notes_mcp/__init__.py, ran `pip install .`, then `COPY . .` and reinstalled
+# with --no-deps). Under BuildKit layer caching that reinstall could be served
+# from a stale cache and leave a package whose __init__.py was the empty stub,
+# so `python -m notes_mcp` died with "cannot import name '__version__' from
+# 'notes_mcp'" and the container never served HTTP (Buildkite smoke). A single
+# install from the copied source removes that class of bug.
+COPY . .
 RUN python -m venv /opt/venv \
     && /opt/venv/bin/pip install --upgrade pip \
-    && mkdir -p src/notes_mcp && touch src/notes_mcp/__init__.py \
     && if [ -f requirements.txt ]; then \
          grep -vE '^\s*(-e|--editable)\s+\.' requirements.txt > /tmp/reqs.txt || true; \
          [ -s /tmp/reqs.txt ] && /opt/venv/bin/pip install --no-cache-dir -r /tmp/reqs.txt; \
@@ -20,12 +27,6 @@ RUN python -m venv /opt/venv \
     && if [ -f pyproject.toml ]; then \
          /opt/venv/bin/pip install --no-cache-dir .; \
        fi
-COPY . .
-RUN if [ -f requirements.txt ]; then \
-      /opt/venv/bin/pip install --no-cache-dir -r requirements.txt; \
-    elif [ -f pyproject.toml ]; then \
-      /opt/venv/bin/pip install --no-cache-dir --no-deps .; \
-    fi
 
 FROM python:3.12-slim
 WORKDIR /app
