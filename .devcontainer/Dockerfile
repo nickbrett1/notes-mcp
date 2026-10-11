@@ -27,12 +27,31 @@ ENV USER_HOME_DIR=/home/vscode
 # vscode-user steps from a writable home directory.
 WORKDIR /home/vscode
 
-RUN if [ -d "$HOME/.oh-my-zsh" ]; then rm -rf "$HOME/.oh-my-zsh"; fi \
-    && sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended \
+# Fetch each remote installer to a file and confirm it is actually a shell script
+# before running it. Executing a fetched body straight from curl
+# (`sh -c "$(curl ...)"`, `curl ... | bash`) fails the build with a bare
+# "exit code: 2" whenever the URL answers with a non-script body - an HTML
+# rate-limit, proxy or captive-portal page served with a 200, which `curl -f`
+# does not reject. The shell then dies on HTML syntax instead of surfacing a
+# network error. Fetch-then-verify turns that into a retried fetch and a clear
+# failure message.
+RUN set -eu \
+    && if [ -d "$HOME/.oh-my-zsh" ]; then rm -rf "$HOME/.oh-my-zsh"; fi \
+    && { curl -fsSL --retry 5 --retry-all-errors --retry-delay 5 -o /tmp/ohmyzsh-install.sh \
+           https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh; \
+         head -n1 /tmp/ohmyzsh-install.sh | grep -q '^#!' \
+           || { echo "ERROR: ohmyzsh install.sh did not return a shell script" >&2; exit 1; }; } \
+    && sh /tmp/ohmyzsh-install.sh --unattended \
+    && rm -f /tmp/ohmyzsh-install.sh \
     && git clone https://github.com/zsh-users/zsh-syntax-highlighting.git $HOME/.oh-my-zsh/custom/plugins/zsh-syntax-highlighting \
     && git clone https://github.com/zsh-users/zsh-autosuggestions $HOME/.oh-my-zsh/custom/plugins/zsh-autosuggestions \
     && git clone --depth=1 https://github.com/romkatv/powerlevel10k.git $HOME/.oh-my-zsh/custom/themes/powerlevel10k \
-    && curl -fsSL https://antigravity.google/cli/install.sh | bash \
+    && { curl -fsSL --retry 5 --retry-all-errors --retry-delay 5 -o /tmp/antigravity-install.sh \
+           https://antigravity.google/cli/install.sh; \
+         head -n1 /tmp/antigravity-install.sh | grep -q '^#!' \
+           || { echo "ERROR: antigravity install.sh did not return a shell script" >&2; exit 1; }; } \
+    && bash /tmp/antigravity-install.sh \
+    && rm -f /tmp/antigravity-install.sh \
     && mkdir -p "$HOME/.local/bin"
 RUN GOOSE_ARCH="$(uname -m | sed 's/arm64/aarch64/')" \
     && GOOSE_TAG="$(curl -fsSL --retry 5 --retry-all-errors --retry-delay 5 https://api.github.com/repos/aaif-goose/goose/releases/latest | sed -n 's/.*"tag_name": "\([^"]*\)".*/\1/p')" \
