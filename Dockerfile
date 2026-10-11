@@ -41,4 +41,10 @@ COPY . .
 EXPOSE 8767
 
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s CMD curl -fsS http://127.0.0.1:8767/healthz || exit 1
-CMD ["python","-m","notes_mcp"]
+# The image is the deployment artifact and declares an HTTP healthcheck, so its
+# default must SERVE HTTP - both the Buildkite smoke step (`docker run IMAGE`,
+# no command override) and the Watchtower-deployed compose container rely on it.
+# Local clients still get stdio: they spawn `python -m notes_mcp` themselves
+# (the module default), not this CMD. Keep in sync via genproj's `command`
+# config so `overwrite: true` reproduces it.
+CMD ["python","-m","notes_mcp","--transport","streamable-http","--host","0.0.0.0","--port","8767"]
