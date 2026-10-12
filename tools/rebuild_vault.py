@@ -36,9 +36,12 @@ RENDERING RULES (hardened 2026-10-11)
 * Comments are rendered as collapsed Obsidian callouts with a DATE label only
   (`> [!note]- Comment (2026-08-17)`), never the body's first line.
 * Link rewriting covers `[[wikilink]]` syntax AND the unambiguous prose form
-  `memos/<uid>`, mapping each known uid to its slug. It is FENCE-AWARE: fenced
-  code blocks (``` / ~~~) are never rewritten, so uids quoted in code samples
-  survive intact. Bare 20-char tokens are deliberately NOT rewritten - that
+  `memos/<uid>`, mapping each known uid to its slug. The prose pattern matches
+  ANY uid token (`[A-Za-z0-9_-]+`) and replaces only when the token is a KNOWN
+  uid, so it handles both 20-char hashes and human-readable slugs
+  (`reader-build-memo`, `embedding-model-selection-v2`). It is FENCE-AWARE:
+  fenced code blocks (``` / ~~~) are never rewritten, so uids quoted in code
+  samples survive intact. Bare tokens are deliberately NOT rewritten - that
   would corrupt incidental identifiers and code.
 * YAML is emitted with ensure_ascii=False so `->` stays `->`, not `\u2192`.
 * A memo with neither title nor body (frontmatter only) is named
@@ -66,8 +69,6 @@ DEFAULT_OUT = "/volumeUSB1/usbshare/docker/obsidian/vault-staging"
 
 INTERNAL = {".obsidian", ".trash", ".livesync", "headless-vault-livesync-v2", "@eaDir"}
 
-UID_RE = re.compile(r"^[A-Za-z0-9]{20,}$")
-
 # --- slug: the SAME rule recovered from /tmp/rename_memos2.py (keep in sync) ---
 _TRANS = {
     0x2014: "-", 0x2013: "-", 0x00b7: "-", 0x2192: "-",
@@ -76,7 +77,10 @@ _TRANS = {
 }
 
 _WIKI_RE = re.compile(r"\[\[([^\]|#]*)((?:#[^\]|]*)?)(\|[^\]]*)?\]\]")
-_MEMOS_REF_RE = re.compile(r"\bmemos/([A-Za-z0-9]{20,})\b")
+# Match ANY candidate uid token; uid2name membership gates the replacement, so
+# this covers both 20-char hashes and human-readable slugs. The old `{20,}`
+# floor silently skipped every slug uid (169 of 346 on the frozen DB).
+_MEMOS_REF_RE = re.compile(r"\bmemos/([A-Za-z0-9_-]+)")
 _FENCE_RE = re.compile(r"(```.*?```|~~~.*?~~~)", re.S)
 
 
