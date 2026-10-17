@@ -12,12 +12,12 @@
 #
 # Checks:
 #   1. POST <url>/mcp `initialize` -> a JSON-RPC result with serverInfo.
-#   2. POST <url>/mcp `tools/list` -> exactly the five notes_* tools.
+#   2. POST <url>/mcp `tools/list` -> exactly the nine notes_* tools.
 #   3. GET  <mcphub>/api/servers/notes-mcp -> status: connected.
 #
 # Env:
 #   NOTES_MCP_URL  default http://notes-mcp:8767/mcp
-#   MCPHUB_URL     default http://nas:8781
+#   MCPHUB_URL     default http://ryzen:8781
 #                  (the mcphub API is on 8781, NOT 3000 - see note below)
 #   MCPHUB_TOKEN   optional; sent as `x-auth-token` on the hub check.
 #                  The dashboard API uses `x-auth-token: <JWT>`, not
@@ -30,8 +30,8 @@
 set -euo pipefail
 
 NOTES_MCP_URL="${NOTES_MCP_URL:-http://notes-mcp:8767/mcp}"
-MCPHUB_URL="${MCPHUB_URL:-http://nas:8781}"
-EXPECTED_TOOLS=(notes_search notes_read notes_write notes_append notes_list)
+MCPHUB_URL="${MCPHUB_URL:-http://ryzen:8781}"
+EXPECTED_TOOLS=(notes_search notes_read notes_write notes_append notes_list notes_patch notes_move notes_archive notes_referrers)
 
 fail() {
   printf 'deploy-gate: FAIL: %s\n' "$*" >&2
@@ -90,7 +90,7 @@ done
 count="$(wc -l <<<"$names" | tr -d ' ')"
 [ "$count" -eq "${#EXPECTED_TOOLS[@]}" ] \
   || fail "expected ${#EXPECTED_TOOLS[@]} tools, got $count: $(tr '\n' ' ' <<<"$names")"
-pass "tools/list exposes exactly the five notes_* tools"
+pass "tools/list exposes exactly the nine notes_* tools"
 
 # --- 3. mcphub registration --------------------------------------------------
 # Optional auth header (the hub API uses `x-auth-token`, not `Bearer`).

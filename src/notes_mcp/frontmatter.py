@@ -20,7 +20,19 @@ _FENCE_RE = re.compile(
 )
 
 # Canonical key order on emit; unknown keys are appended in insertion order.
-_ORDER = ("title", "tags", "created", "updated", "aliases")
+# The convention's §5 contract leads, then the legacy Memos keys.
+_ORDER = (
+    "title",
+    "project",
+    "type",
+    "status",
+    "tags",
+    "created",
+    "updated",
+    "aliases",
+    "supersedes",
+    "part_of",
+)
 
 
 class FrontmatterError(ValueError):

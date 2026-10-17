@@ -6,9 +6,9 @@ Orientation for any coding agent working in this repository (the in-repo
 ## What this repo is
 
 An **MCP server** that gives agents a small, constrained interface to the
-Obsidian vault on the NAS (read/write markdown notes), replacing the ad-hoc
-`memos` MCP for note-taking. genproj generated the infra shell; the server
-itself is hand-written and **not yet implemented**.
+Obsidian vault (read/write, move, patch and archive markdown notes),
+replacing the ad-hoc `memos` MCP for note-taking. genproj generated the infra
+shell; the server is hand-written and implements the nine-tool surface.
 
 ## Start here
 
@@ -16,7 +16,8 @@ itself is hand-written and **not yet implemented**.
 complete, decision-locked build brief. It supersedes nothing and omits nothing;
 read it in full before writing code. It carries:
 
-- the target tool surface (5 tools, exact names and shapes),
+- the original five-tool surface (now nine: the mutation ops in the
+  `notes-mcp-mutation-ops-order` work order),
 - the package layout to create under `src/notes_mcp/`,
 - path-safety rules, frontmatter/slug rules, search rules,
 - the transport/health/auth decisions (auth: **none**),

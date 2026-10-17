@@ -25,7 +25,7 @@ def vault_dir(tmp_path, monkeypatch):
     return root
 
 
-def test_exactly_five_tools_are_registered():
+def test_exactly_nine_tools_are_registered():
     tools = asyncio.run(server.mcp.list_tools())
     assert {t.name for t in tools} == {
         "notes_search",
@@ -33,6 +33,10 @@ def test_exactly_five_tools_are_registered():
         "notes_write",
         "notes_append",
         "notes_list",
+        "notes_patch",
+        "notes_move",
+        "notes_archive",
+        "notes_referrers",
     }
 
 
@@ -65,10 +69,30 @@ def test_notes_write_matches_plain_function(vault_dir):
     }
 
 
-def test_notes_write_derives_slug_path_when_omitted(vault_dir):
+def test_notes_write_without_project_files_to_dated_inbox(vault_dir):
     result = server.notes_write(title="My Great Note", body="b")
-    assert result["path"] == "my-great-note.md"
-    assert (vault_dir / "my-great-note.md").exists()
+    assert result["path"].startswith("inbox/")
+    assert result["path"].endswith("-my-great-note.md")
+    assert (vault_dir / result["path"]).exists()
+
+
+def test_notes_write_routes_known_project(vault_dir):
+    result = server.notes_write(
+        title="Mutation Ops", project="notes-mcp", type="plan", body="b"
+    )
+    assert result["path"] == "projects/notes-mcp/mutation-ops.md"
+
+
+def test_notes_write_routes_known_host_to_infra(vault_dir):
+    result = server.notes_write(title="Cutover", project="um790", body="b")
+    assert result["path"] == "infra/um790/cutover.md"
+
+
+def test_notes_write_routes_decision_and_mailbox(vault_dir):
+    decision = server.notes_write(title="Use Archive", type="decision", body="b")
+    mailbox = server.notes_write(title="Ping", type="mailbox", body="b")
+    assert decision["path"].startswith("decisions/")
+    assert mailbox["path"] == "inbox/mailbox/ping.md"
 
 
 def test_notes_append_matches_plain_function(vault_dir):
