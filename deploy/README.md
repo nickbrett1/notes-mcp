@@ -142,3 +142,31 @@ generated Dockerfile, compose file and Homepage widget stay consistent:
 
 Regenerate with `overwrite: true` to apply these to an existing repo — existing
 app code is preserved; only generated infra files are updated.
+
+## 5. Guard: catch a stale `/vault` bind mount
+
+Docker resolves a bind-mount source to a directory **inode** when the container is
+created and keeps that inode for the container's life. If the vault directory is
+later renamed/recreated on the host (`vault` -> `vault-old`, then a fresh `vault`),
+the *running* container silently keeps reading the old directory. The server looks
+healthy (`/healthz` answers, `notes_list` works) but it is the wrong vault, so notes
+created on the iPhone — which syncs the live directory — never appear in any
+`notes_*` tool. This happened on 2026-10-12 (container held `vault-old`'s inode).
+
+`scripts/check-vault-mount.sh` runs **on the host that runs notes-mcp**
+(currently ryzen) and compares the inode of `HOST_VAULT` with the inode of
+`/vault` as the container sees it (`docker exec … stat -c %i /vault`, so no root
+or `/proc/<pid>` access is needed). It exits non-zero on a mismatch.
+
+```bash
+# cron / Dagu / Homepage monitor on the notes-mcp host:
+HOST_VAULT=/srv/docker/obsidian/vault \
+  DOCKER="sudo docker" ./scripts/check-vault-mount.sh
+```
+
+Remediation when it fails: recreate the container so the mount re-resolves:
+
+```bash
+cd /srv/docker/notes-mcp   # service is named `app`
+sudo docker compose up -d --force-recreate app
+```
