@@ -48,7 +48,7 @@ RUN set -eu \
     && sh /tmp/ohmyzsh-install.sh --unattended \
     && rm -f /tmp/ohmyzsh-install.sh \
     && git clone https://github.com/zsh-users/zsh-syntax-highlighting.git $HOME/.oh-my-zsh/custom/plugins/zsh-syntax-highlighting \
-    && git clone https://github.com/zsh-users/zsh-autosuggestions.git $HOME/.oh-my-zsh/custom/plugins/zsh-autosuggestions \
+    && git clone https://github.com/zsh-users/zsh-autosuggestions $HOME/.oh-my-zsh/custom/plugins/zsh-autosuggestions \
     && git clone --depth=1 https://github.com/romkatv/powerlevel10k.git $HOME/.oh-my-zsh/custom/themes/powerlevel10k \
     && { curl -fsSL --retry 5 --retry-all-errors --retry-delay 5 -o /tmp/antigravity-install.sh \
            https://antigravity.google/cli/install.sh; \
