@@ -1,6 +1,10 @@
 FROM mcr.microsoft.com/devcontainers/python
+# No apt nodejs/npm here: the devcontainer's node feature already installs
+# Node via nvm, and an apt-provided Node adds Debian's own corepack at
+# /usr/share/nodejs/corepack, which the feature's `corepack enable` then
+# resolves instead of the nvm-bundled one and crashes, failing the build.
 RUN apt-get update && export DEBIAN_FRONTEND=noninteractive \
-    && apt-get -y install --no-install-recommends git socat curl gnupg nodejs npm openssh-server mosh micro libevent-dev libncurses-dev pkg-config bison build-essential xclip \
+    && apt-get -y install --no-install-recommends git socat curl gnupg openssh-server mosh micro libevent-dev libncurses-dev pkg-config bison build-essential xclip \
     && curl -sLf --retry 3 --tlsv1.2 --proto "=https" 'https://packages.doppler.com/public/cli/gpg.DE2A7741A397C129.key' | gpg --dearmor -o /usr/share/keyrings/doppler-archive-keyring.gpg \
     && echo "deb [signed-by=/usr/share/keyrings/doppler-archive-keyring.gpg] https://packages.doppler.com/public/cli/deb/debian any-version main" | tee /etc/apt/sources.list.d/doppler-cli.list \
     && apt-get update && apt-get install -y doppler
@@ -44,7 +48,7 @@ RUN set -eu \
     && sh /tmp/ohmyzsh-install.sh --unattended \
     && rm -f /tmp/ohmyzsh-install.sh \
     && git clone https://github.com/zsh-users/zsh-syntax-highlighting.git $HOME/.oh-my-zsh/custom/plugins/zsh-syntax-highlighting \
-    && git clone https://github.com/zsh-users/zsh-autosuggestions $HOME/.oh-my-zsh/custom/plugins/zsh-autosuggestions \
+    && git clone https://github.com/zsh-users/zsh-autosuggestions.git $HOME/.oh-my-zsh/custom/plugins/zsh-autosuggestions \
     && git clone --depth=1 https://github.com/romkatv/powerlevel10k.git $HOME/.oh-my-zsh/custom/themes/powerlevel10k \
     && { curl -fsSL --retry 5 --retry-all-errors --retry-delay 5 -o /tmp/antigravity-install.sh \
            https://antigravity.google/cli/install.sh; \
