@@ -7,13 +7,78 @@ filesystem itself.
 
 from __future__ import annotations
 
+import functools
+import inspect
+from collections.abc import Callable
 from typing import Any
 
 from mcp.server import MCPServer
+from mcp.server.mcpserver.exceptions import ToolError
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 from . import __version__, search, vault
+from .frontmatter import FrontmatterError
+
+# Errors the vault raises deliberately: a bad path, a missing note, a
+# non-matching ``find``, a cap breach, unusable frontmatter. They are the
+# model's to read and correct, so they must reach the caller as a ToolError.
+# Anything else is a genuine crash and is left to the framework to mask and
+# log with a traceback.
+_EXPECTED_ERRORS = (vault.VaultError, FrontmatterError)
+
+_FIND_SNIPPET_CHARS = 120
+
+
+def _snippet(text: str) -> str:
+    """Shorten a ``find`` string for an error message, marking the elision."""
+    if len(text) <= _FIND_SNIPPET_CHARS:
+        return text
+    return text[: _FIND_SNIPPET_CHARS - 3] + "..."
+
+
+def _describe_failure(arguments: dict[str, Any], exc: Exception) -> str:
+    """A diagnosable message: which note failed, with what, and why.
+
+    Context that lets a caller act without a round-trip to the server log: the
+    note path, the exception class (so "my find didn't match" is distinguishable
+    from "the note is gone"), and the ``find`` snippet when the exception text
+    does not already quote it in full.
+    """
+    path = arguments.get("path") or arguments.get("from_path")
+    where = f"path {path!r}: " if isinstance(path, str) and path else ""
+    message = f"{where}{type(exc).__name__}: {exc}"
+    find = arguments.get("find")
+    if isinstance(find, str) and find:
+        snippet = _snippet(find)
+        if snippet not in str(exc):
+            message += f" [find={snippet!r}]"
+    return message
+
+
+def _readable_errors(tool: Callable[..., Any]) -> Callable[..., Any]:
+    """Turn expected vault/frontmatter errors into a ``ToolError``.
+
+    Without this, the MCP framework classifies every non-``ToolError`` as a
+    crash: the client sees only ``Error executing tool <name>`` (32 opaque
+    characters) and the real text, e.g. ``expected 1 match(es) for 'x', found
+    0``, is written to the server log where the caller cannot read it.
+    """
+
+    @functools.wraps(tool)
+    def wrapper(*args: Any, **kwargs: Any) -> Any:
+        try:
+            return tool(*args, **kwargs)
+        except _EXPECTED_ERRORS as exc:
+            try:
+                bound = inspect.signature(tool).bind_partial(*args, **kwargs)
+                arguments = dict(bound.arguments)
+            except TypeError:  # pragma: no cover - binding is best-effort
+                arguments = dict(kwargs)
+            raise ToolError(_describe_failure(arguments, exc)) from exc
+
+    return wrapper
+
 
 mcp = MCPServer(
     name="notes-mcp",
@@ -32,12 +97,14 @@ mcp = MCPServer(
 
 
 @mcp.tool()
+@_readable_errors
 def notes_search(query: str, limit: int = 10) -> list[dict[str, Any]]:
     """Search notes by case-insensitive substring (path, title, body) or tag."""
     return search.search_notes(vault.vault_root(), query, limit=limit)
 
 
 @mcp.tool()
+@_readable_errors
 def notes_read(path: str) -> str:
     """Read one note's full text (frontmatter + body) by vault-relative path.
 
@@ -49,6 +116,7 @@ def notes_read(path: str) -> str:
 
 
 @mcp.tool()
+@_readable_errors
 def notes_write(
     path: str | None = None,
     title: str = "",
@@ -88,6 +156,7 @@ def notes_write(
 
 
 @mcp.tool()
+@_readable_errors
 def notes_patch(
     path: str,
     frontmatter: dict[str, Any] | None = None,
@@ -122,6 +191,7 @@ def notes_patch(
 
 
 @mcp.tool()
+@_readable_errors
 def notes_append(path: str, text: str) -> dict[str, Any]:
     """Append ``text`` to an existing note as a new paragraph.
 
@@ -132,6 +202,7 @@ def notes_append(path: str, text: str) -> dict[str, Any]:
 
 
 @mcp.tool()
+@_readable_errors
 def notes_move(
     from_path: str,
     to_path: str,
@@ -157,6 +228,7 @@ def notes_move(
 
 
 @mcp.tool()
+@_readable_errors
 def notes_archive(
     path: str,
     overwrite: bool = False,
@@ -174,6 +246,7 @@ def notes_archive(
 
 
 @mcp.tool()
+@_readable_errors
 def notes_referrers(path: str) -> dict[str, Any]:
     """Find every note that references ``path``, with line numbers.
 
@@ -187,6 +260,7 @@ def notes_referrers(path: str) -> dict[str, Any]:
 
 
 @mcp.tool()
+@_readable_errors
 def notes_list(
     folder: str | None = None,
     limit: int = 50,
