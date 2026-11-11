@@ -53,15 +53,18 @@ eventual shape. Do not add it speculatively.
 **Bulk writes are forbidden by design.** One file per call — LiveSync's watcher
 can miss large batches. `notes_write` must never loop over multiple notes.
 
-**Note-size ceiling.** A note's full text (frontmatter + body) is capped at
-51,200 characters, mirroring the ceiling of the Memos system this replaces. The
-point is to stop an agent writing far more in a single note than it needs to,
-which bloats the context of every later reader. `notes_write` and `notes_append`
-enforce the cap on the **rendered** text and raise `NoteTooLargeError` (the write
-is refused, nothing is written) when it would be exceeded; the message tells the
-caller to split the content into smaller notes. The limit is configurable via the
-`NOTES_MAX_CHARS` env var; an unset or non-positive/non-integer value falls back
-to the 51,200 default so a bad value can never disable the guard.
+**Note size — no default ceiling.** Notes are unlimited in size. An earlier
+51,200-character cap (inherited from the Memos system this replaces) caused
+agents to lose state when a genuinely useful note outgrew it, so it is gone.
+`notes_write` and `notes_append` enforce a ceiling only when an operator sets
+`NOTES_MAX_CHARS` to a positive integer; then they raise `NoteTooLargeError`
+(nothing is written) on the **rendered** text with a diagnostic naming the
+largest sections. An unset, non-positive or non-integer value means no limit.
+
+**Reading large notes.** Client UIs truncate large tool results (20k characters
+in practice), which hid the tails of long notes. `notes_read` therefore takes
+optional `offset` and `limit` (character slice): read in chunks of ~15,000 and
+advance `offset` until the returned chunk is shorter than `limit`.
 
 ---
 

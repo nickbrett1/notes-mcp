@@ -46,11 +46,10 @@ INFRA_HOSTS = {
 # must not be able to smuggle a traversal past the resolve() check.
 _ENCODED_SEPARATORS = ("%2f", "%5c")
 
-# A note's full text (frontmatter + body) is capped so an agent cannot write a
-# single note far larger than it needs to, which bloats the context of every
-# later reader. Mirrors the 51,200-char ceiling of the memos system this
-# replaces. Override with NOTES_MAX_CHARS.
-DEFAULT_MAX_NOTE_CHARS = 51_200
+# Notes are unlimited by default: a hard cap made agents lose state when a
+# useful note outgrew it. An operator can still impose a ceiling by setting
+# NOTES_MAX_CHARS to a positive integer; anything else means "no limit".
+DEFAULT_MAX_NOTE_CHARS: int | None = None
 
 
 class VaultError(Exception):
@@ -69,11 +68,13 @@ class NoteTooLargeError(VaultError, ValueError):
     """A write/append would exceed the configured note-size ceiling."""
 
 
-def max_note_chars() -> int:
-    """Character ceiling for a note's full text, from ``NOTES_MAX_CHARS``.
+def max_note_chars() -> int | None:
+    """Character ceiling for a note's full text, or ``None`` for no limit.
 
-    Falls back to :data:`DEFAULT_MAX_NOTE_CHARS` when unset or not a positive
-    integer, so a bad value can never disable the guard entirely.
+    Unlimited by default. Set ``NOTES_MAX_CHARS`` to a positive integer to
+    impose a ceiling; unset, empty, zero, negative or non-integer values all
+    mean "no limit", so the guard never surprises an agent with a refusal it
+    did not opt into.
     """
     raw = os.environ.get("NOTES_MAX_CHARS")
     if raw:
@@ -124,7 +125,7 @@ def _enforce_size(
     rewritten whole (work order §4.2/§4.3).
     """
     limit = max_note_chars()
-    if len(text) <= limit:
+    if limit is None or len(text) <= limit:
         return
     if previous_text is not None and len(text) <= len(previous_text):
         return
@@ -290,14 +291,35 @@ def count_notes(root: Path) -> int:
     return sum(1 for _ in _iter_note_paths(base, base))
 
 
-def read_note(root: Path, rel: str) -> str:
-    """Return a note's full text (frontmatter + body), by vault-relative path."""
+def read_note(
+    root: Path,
+    rel: str,
+    *,
+    offset: int = 0,
+    limit: int | None = None,
+) -> str:
+    """Return a note's text (frontmatter + body), by vault-relative path.
+
+    ``offset``/``limit`` slice the text by characters so a caller whose client
+    truncates large tool results can still read the tail: request
+    ``limit=15000`` and advance ``offset`` until the returned chunk is shorter
+    than ``limit``. With ``limit=None`` (the default) the whole note is
+    returned.
+    """
+    if offset < 0:
+        raise VaultError("offset must be >= 0")
+    if limit is not None and limit <= 0:
+        raise VaultError("limit must be > 0 when given")
     path = resolve_note(root, rel)
     if path.is_dir():
         raise VaultPathError("path is a directory, not a note")
     if not path.exists():
         raise NoteNotFoundError(f"note not found: {rel}")
-    return path.read_text(encoding="utf-8")
+    text = path.read_text(encoding="utf-8")
+    if offset == 0 and limit is None:
+        return text
+    end = None if limit is None else offset + limit
+    return text[offset:end]
 
 
 def derive_path(

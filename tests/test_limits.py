@@ -1,4 +1,8 @@
-"""The note-size ceiling: refuse writes/appends that would bloat the context."""
+"""Note size: unlimited by default, capped only when an operator opts in.
+
+The old 51,200-character default made agents lose state on long notes, so the
+default is now no limit. ``NOTES_MAX_CHARS`` still allows a deliberate ceiling.
+"""
 
 from __future__ import annotations
 
@@ -14,20 +18,17 @@ def make_root(tmp_path):
     return root
 
 
-def test_write_refused_when_over_default_limit(tmp_path):
+def test_no_limit_by_default():
+    assert vault.max_note_chars() is None
+
+
+def test_large_write_succeeds_by_default(tmp_path):
     root = make_root(tmp_path)
-    with pytest.raises(NoteTooLargeError):
-        vault.write_note(root, "big.md", title="Big", body="x" * 60_000)
-    assert not (root / "big.md").exists()
+    vault.write_note(root, "big.md", title="Big", body="x" * 200_000)
+    assert (root / "big.md").exists()
 
 
-def test_write_allowed_under_limit(tmp_path):
-    root = make_root(tmp_path)
-    result = vault.write_note(root, "ok.md", title="Ok", body="x" * 1_000)
-    assert result["created_or_updated"] == "created"
-
-
-def test_limit_is_configurable(tmp_path, monkeypatch):
+def test_operator_can_still_impose_a_limit(tmp_path, monkeypatch):
     monkeypatch.setenv("NOTES_MAX_CHARS", "100")
     root = make_root(tmp_path)
     with pytest.raises(NoteTooLargeError):
@@ -36,9 +37,9 @@ def test_limit_is_configurable(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize("bad", ["not-a-number", "0", "-5", " "])
-def test_bad_limit_falls_back_to_default(monkeypatch, bad):
+def test_invalid_or_non_positive_limit_means_unlimited(monkeypatch, bad):
     monkeypatch.setenv("NOTES_MAX_CHARS", bad)
-    assert vault.max_note_chars() == vault.DEFAULT_MAX_NOTE_CHARS
+    assert vault.max_note_chars() is None
 
 
 def test_append_refused_when_it_would_exceed(tmp_path, monkeypatch):
